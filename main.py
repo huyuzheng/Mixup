@@ -3,6 +3,7 @@ from tqdm import tqdm
 import numpy as np
 
 
+hidden = 500
 
 def filter(X, Y, valid_labels=[0,1]):
     mask = np.isin(Y, valid_labels).squeeze(1)
@@ -25,8 +26,9 @@ X, Y = mixup.mixup_shuffle(train_data, train_label, mix=False, size=500)
 for lr, C,  in [(1e-1, 1e-3)]:
     print('='*81)  # a nice bar
     print('lr is %.3e, C is %.3e' %(lr, C))
-
-    alphas = solver.SGD(X, Y, Hidden=250, lr=lr, C=C, epochs=400, batch_size=64, mix=False) 
+    """
+    alphas = solver.SGD(X, Y, Hidden=600, lr=lr, C=C, epochs=400, batch_size=32, mix=False) 
+    """
     # print(alphas)
     # input()
     print('Start testing...')
@@ -34,29 +36,31 @@ for lr, C,  in [(1e-1, 1e-3)]:
     cnt = 0
 
     d=len(X[0])
-    Hidden=250
+    Hidden=600
     np.random.seed(42)
     W = np.random.randn(Hidden, d) * np.sqrt(2./(Hidden + d))
-
+    """
     for td, tl in tqdm(zip(test_data, test_label)):
         if tl in [0, 1]:
             if solver.predict(td, alphas, W) == tl[0]:
                 right+=1
             cnt += 1
+    
         
     print('\t --- No-mixup total accuracy: %.3f %%'%(right/cnt*100.,))
-
-    alphas = solver.SGD(X, Y, Hidden=250, lr=lr, C=C, epochs=400, batch_size=64, mix=True) 
+    """
+    alphas = solver.SGD(X, Y, Hidden=400, lr=lr, C=C, epochs=600, batch_size=32, mix=True) 
+    
     # print(alphas)
     # input()
     print('Start testing...')
     right = 0
     cnt = 0
     d=len(X[0])
-    Hidden=250
+    Hidden=400
     np.random.seed(42)
     W = np.random.randn(Hidden, d) * np.sqrt(2./(Hidden + d))
-
+    
     for td, tl in tqdm(zip(test_data, test_label)):
         if tl in [0, 1]:
             if solver.predict(td, alphas, W) == tl[0]:
@@ -64,4 +68,4 @@ for lr, C,  in [(1e-1, 1e-3)]:
             cnt += 1
         
     print('\t --- Mixup total accuracy: %.3f %%'%(right/cnt*100.,))
-        
+    

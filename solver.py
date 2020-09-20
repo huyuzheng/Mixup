@@ -53,7 +53,7 @@ def SGD(X, Y, Hidden, lr=1e-2, C=1e-4, batch_size=64, epochs=20, mix=False):
     if not batch_size:
         batch_size = d 
 
-    indices = list(range(Hidden)) 
+    indices = list(range(d)) 
     # np.random.seed(42)
     # alpha = np.random.random(n) 
     alpha = np.random.randn(Hidden) * np.sqrt(2./(1 + Hidden)) 
@@ -68,7 +68,7 @@ def SGD(X, Y, Hidden, lr=1e-2, C=1e-4, batch_size=64, epochs=20, mix=False):
 
     # make it random again
     np.random.seed()
-
+    Qlist = [i*400//8 for i in range(1, 8)]
     print('Start training...')
     if mix == False:
         for epoch in tqdm(range(epochs)):
@@ -87,11 +87,17 @@ def SGD(X, Y, Hidden, lr=1e-2, C=1e-4, batch_size=64, epochs=20, mix=False):
                 alpha = prev_alpha
                 continue 
             """
+            
             if epoch == epochs//2:
                 lr /= 10
-            if epoch == epochs*3//4:
+            elif epoch == epochs*3//4:
                 lr /= 10
-
+            elif epoch == epochs*7//8:
+                lr /= 10
+            """
+            if epoch in Qlist:
+                lr /= 2
+            """
             losses.append(new_loss)
             # norm.append(np.linalg.norm(alpha))
 
@@ -108,12 +114,17 @@ def SGD(X, Y, Hidden, lr=1e-2, C=1e-4, batch_size=64, epochs=20, mix=False):
             for i in range(len(X_mix)):
                 Xi, Yi = np.array([X_mix[i]]), np.array([Y_mix[i]])
                 alpha = Update_Parameters(Xi, Yi, alpha, C, lr, Hidden, W)
+            """
             if epoch == epochs//2:
                 lr /= 10
-            if epoch == epochs*3//4:
+            elif epoch == epochs*3//4:
                 lr /= 10
-
-        
+            elif epoch == epochs*7//8:
+                lr /= 10
+            """
+            if epoch in Qlist:
+                lr /= 2
+            
 
 
 
