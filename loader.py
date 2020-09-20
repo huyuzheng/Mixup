@@ -30,7 +30,7 @@ def load_mnist():
         train_input.append(batch.squeeze().numpy().reshape(784,))
         train_label.append(label.numpy())
         cnt += 1
-        if cnt == 100: break
+        if cnt == 1300: break
 
     print('Loading test data...')
     test_data = torch.utils.data.DataLoader(

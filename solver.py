@@ -3,37 +3,29 @@ __doc__ = '''Implement the mathematical details. '''
 from random import choices, seed 
 import numpy as np
 from tqdm import tqdm
+import mixup
 
-def rbf(x, y, sigma=1.): 
-    return np.exp(-np.linalg.norm(x-y)**2/sigma**2/100.)
 
-def exponential(x, y, sigma=1.):
-    return np.exp(-np.linalg.norm(x-y)/sigma/10)
+# Some choices of activation functions
 
-def inner(x, y):
-    return np.dot(x, y) / len(x)**.5
+def Activation_ReLU(x):
+    return np.maximum(0, x)
 
-def polynomial(x, y, c, d=2):
-    return (np.dot(x, y)+c)**d
+def Activation_Cos(x):
+    return np.cos(x)
 
+# Model: Random Feature(RF), f(x) = a^T \sigma(Wx), where "W" is fixed after initialization and we only train "a" using SGD.
+# a: R^{Hidden*1}, W: R^{Hidden*d}, x: R^{d*1}
+
+def Random_Feature(alpha, x, W_mat):
+    # b = np.random.rand(Hidden, 1) * 2 * np.pi    
+    return alpha@Activation_ReLU(W_mat@x).squeeze()
 
 @np.vectorize
 def sigmoid(x):
     return 1/(1+np.exp(x))
 
 
-def k_mat(X, kernel_func):
-    """
-    Assuming that kernel_func is symmetric.  
-    """
-    n = len(X)
-    ret = np.zeros((n, n))
-    for i in range(n):
-        ret[i][i] = kernel_func(X[i], X[i])
-        for j in range(i+1, n):
-            ret[i][j] = ret[j][i] = kernel_func(X[i], X[j])
-
-    return ret 
 
 """
 For MNIST, we recommend:
@@ -43,95 +35,104 @@ batch_size=None,
 epoch=20,
 """
 
-def SGD(X, Y, lr=1e-3, C=1e-4, batch_size=None, epochs=20, tolerance=1e-3, kernel_func=None):
-    if kernel_func == None:
-        kernel_func = rbf
 
-    n = len(X)
+
+def Update_Parameters(X, Y, alpha, C, lr, Hidden, W_mat):
+    b = len(X)
+    Gradient = np.zeros(Hidden)
+    for i in range(b):
+        Gradient += (Y[i] - sigmoid(Random_Feature(alpha, X[i], W_mat)))*np.array([Activation_ReLU(W_mat[j]@X[i]) for j in range(Hidden)])
+
+
+    return alpha - lr*Gradient/b + C*alpha
+
+def SGD(X, Y, Hidden, lr=1e-2, C=1e-4, batch_size=64, epochs=20, mix=False):
+
+    d = len(X)
+
     if not batch_size:
-        batch_size = n 
+        batch_size = d 
 
-    indices = list(range(n)) 
+    indices = list(range(Hidden)) 
     # np.random.seed(42)
     # alpha = np.random.random(n) 
-    alpha = np.random.randn(n) / 10.
-    norm = []
-    K = k_mat(X, kernel_func)
+    alpha = np.random.randn(Hidden) * np.sqrt(2./(1 + Hidden)) 
     losses = [10000] 
 
-    print('Start training...')
-    for epoch in tqdm(range(epochs)):
-        batch_idx = choices(indices, k=batch_size)  # randomly choose a mini-batch
-        
-        K_rest = k_mat(X[np.ix_(batch_idx)], kernel_func)  # consider a restricted matrix 
-
-        y_rest = Y[np.ix_(batch_idx)]
-
-        alpha_rest = alpha[np.ix_(batch_idx)]
-        prev_alpha = alpha.copy()
-
-        """
-        print(-(np.dot(y_rest.squeeze(), np.log(sigmoid(alpha_rest@K_rest)))+np.dot(1-y_rest.squeeze(), np.log(1-sigmoid(alpha_rest@K_rest)))))
-        print(alpha_rest)
-        print((sigmoid(alpha_rest@K_rest)[:,None] - y_rest).squeeze(1))
-        print((K_rest@(sigmoid(alpha_rest@K_rest)[:,None] - y_rest)).squeeze(1))
-        print((lr * K_rest@(sigmoid(alpha_rest@K_rest)[:,None] - y_rest)).squeeze(1)   + C*alpha_rest)
-        input()
-        """
-
-        alpha[np.ix_(batch_idx)] -= -(lr * K_rest@(sigmoid(alpha_rest@K_rest)[:,None] - y_rest)).squeeze(1)   + C*alpha_rest # update alpha
-        """
-        alpha_rest = alpha[np.ix_(batch_idx)]
-
-        print(-(np.dot(y_rest.squeeze(), np.log(sigmoid(alpha_rest@K_rest)))+np.dot(1-y_rest.squeeze(), np.log(1-sigmoid(alpha_rest@K_rest)))))
-        """
-        new_loss = -((np.dot(Y.squeeze(), np.log(sigmoid(alpha@K)))+np.dot(1-Y.squeeze(), np.log(1-sigmoid(alpha@K))))/n)
-
-        if new_loss > losses[-1]: 
-            lr /= 2.   # adaptively scale down learning rate
-            alpha = prev_alpha
-            continue 
-
-        losses.append(new_loss)
-        norm.append(np.linalg.norm(alpha))
-        
-        """        
-        right = 0
-        cnt = 0
-        for td, tl in tqdm(zip(X, Y)):
-            if tl in [0, 1]:
-                if predict(X, td, alpha) == tl[0]:
-                    right+=1
-                cnt += 1
-        
-        print('Total Accuracy: %.3f %%'%(right/cnt*100.,))
-        print('lr is %.1e'%lr)
-        """
-        
-        # if losses[-2]-losses[-1] < tolerance:
-        #     break  # early stop
-  
-
-    print('alpha.T K alpha is %.3f' % float(alpha[None,:]@K@alpha[:,None]))
-
-    import matplotlib.pyplot as plt
-    plt.plot(np.array(losses[1:]))
-    plt.show()
+    # never calc a fixed object twice, as long as memory permits
     
+    # Xavier Initialization
+    
+    np.random.seed(42)
+    W = np.random.randn(Hidden, len(X[0])) * np.sqrt(2./(Hidden + len(X[0])))
+
+    # make it random again
+    np.random.seed()
+
+    print('Start training...')
+    if mix == False:
+        for epoch in tqdm(range(epochs)):
+            batch_idx = choices(indices, k=batch_size)  # randomly choose a mini-batch
+            X_rest = X[np.ix_(batch_idx)]
+            Y_rest = Y[np.ix_(batch_idx)]
+
+            prev_alpha = alpha.copy()
+            alpha = Update_Parameters(X_rest, Y_rest, alpha, C, lr, Hidden, W)
+            Prediction = np.array([Random_Feature(alpha, X[i], W) for i in range(d)])
+            new_loss = -((np.dot(Y.squeeze(), np.log(sigmoid(Prediction)))+np.dot(np.ones(d)-Y.squeeze(), np.log(1.-sigmoid(Prediction))))/d)
+            
+            """
+            if new_loss > losses[-1]: 
+                lr /= 2.   # adaptively scale down learning rate
+                alpha = prev_alpha
+                continue 
+            """
+            if epoch == epochs//2:
+                lr /= 10
+            if epoch == epochs*3//4:
+                lr /= 10
+
+            losses.append(new_loss)
+            # norm.append(np.linalg.norm(alpha))
+
+        import matplotlib.pyplot as plt
+        plt.plot(np.array(losses[1:]))
+        plt.show()
+
+    if mix == True:
+        for epoch in tqdm(range(epochs)):
+            batch_idx = choices(indices, k=batch_size)  # randomly choose a mini-batch
+            X_rest = X[np.ix_(batch_idx)]
+            y_rest = Y[np.ix_(batch_idx)]
+            X_mix, Y_mix = mixup.mixup_shuffle(X_rest, y_rest, mix=True, size=batch_size)
+            for i in range(len(X_mix)):
+                Xi, Yi = np.array([X_mix[i]]), np.array([Y_mix[i]])
+                alpha = Update_Parameters(Xi, Yi, alpha, C, lr, Hidden, W)
+            if epoch == epochs//2:
+                lr /= 10
+            if epoch == epochs*3//4:
+                lr /= 10
+
+        
+
+
+
+    # print('alpha.T K alpha is %.3f' % float(alpha[None,:]@K@alpha[:,None]))
+
     return alpha 
 
 
-def predict(X, x, alpha, labels=None, kernel_func=None):
+
+def predict(x, alpha, W, labels=None):
     """
     single image predict
     """
-    if kernel_func == None:
-        kernel_func = rbf
     if labels == None:
         labels = [0, 1]
     
+
     # print(sigmoid(alpha@np.array([kernel_func(xx, x) for xx in X])))
-    if sigmoid(alpha@np.array([kernel_func(xx, x) for xx in X])) < 0.5:
+    if sigmoid(Random_Feature(alpha, x, W)) < 0.5:
         return 0 
     else:
         return 1
