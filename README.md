@@ -1,2 +1,2 @@
 # Mixup
-Experiments for Kernel mixup on MNIST and CIFAR 10.
+Experiments for RF mixup on MNIST and CIFAR 10.
